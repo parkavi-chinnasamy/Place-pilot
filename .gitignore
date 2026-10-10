@@ -1,0 +1,22 @@
+# .gitignore for PlacePilot
+# Python
+__pycache__/
+*.py[cod]
+*.so
+# Virtual environment
+backend/venv/
+# Node.js dependencies
+frontend/node_modules/
+# Build artifacts
+frontend/.cache/
+frontend/dist/
+# Environment files
+.env
+.env.local
+# IDE files
+.vscode/
+.idea/
+# Logs
+*.log
+# Misc
+.DS_Store
