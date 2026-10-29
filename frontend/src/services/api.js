@@ -1,7 +1,20 @@
 import axios from 'axios';
 
+const getBaseURL = () => {
+  const envUrl = process.env.REACT_APP_API_URL;
+  if (envUrl && envUrl.trim()) {
+    return envUrl.trim().replace(/\/+$/, '');
+  }
+  // In development mode without an explicit env variable, default to local backend
+  if (process.env.NODE_ENV === 'development') {
+    return 'http://localhost:8000';
+  }
+  // In production, default to deployed Render backend
+  return 'https://place-pilot-l7bj.onrender.com';
+};
+
 const API = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000',
+  baseURL: getBaseURL(),
   timeout: 30000,
 });
 

@@ -20,7 +20,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 1440
 
     # CORS
-    allowed_origins: str = "http://localhost:3000,http://localhost:5173"
+    allowed_origins: str = (
+        "http://localhost:3000,http://localhost:5173,https://place-pilot-3mft.vercel.app"
+    )
 
     # GenAI
     gemini_api_key: str = ""
@@ -45,7 +47,17 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins_list(self) -> list[str]:
-        return [o.strip() for o in self.allowed_origins.split(",")]
+        default_origins = [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "https://place-pilot-3mft.vercel.app",
+        ]
+        origins: list[str] = []
+        raw_list = [o.strip().rstrip("/") for o in self.allowed_origins.split(",") if o.strip()]
+        for origin in default_origins + raw_list:
+            if origin and origin not in origins:
+                origins.append(origin)
+        return origins
 
     class Config:
         env_file = ".env"
