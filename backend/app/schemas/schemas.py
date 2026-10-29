@@ -134,9 +134,16 @@ class QuestionOut(BaseModel):
 
 class AnswerSubmit(BaseModel):
     question_id: str
-    selected_option: str
+    selected_option: Optional[str] = None
+
+class AssessmentStart(BaseModel):
+    assessment_type: str
+    topic: Optional[str] = None
+    difficulty: Optional[str] = None
+    count: Optional[int] = 15
 
 class AssessmentSubmit(BaseModel):
+    assessment_id: Optional[str] = None
     assessment_type: str
     answers: List[AnswerSubmit]
     time_taken_secs: Optional[int] = None
@@ -145,10 +152,14 @@ class AssessmentResultOut(BaseModel):
     assessment_id: str
     assessment_type: str
     total_questions: int
-    correct_answers: int
+    attempted_questions: int = 0
+    correct_answers: int = 0
+    incorrect_answers: int = 0
+    unanswered_questions: int = 0
     score: float
-    time_taken_secs: Optional[int]
-    completed_at: Optional[datetime]
+    status: str = "completed"
+    time_taken_secs: Optional[int] = None
+    completed_at: Optional[datetime] = None
     results: Optional[List[Dict]] = []
 
     class Config:
@@ -191,27 +202,53 @@ class CodeSubmitResponse(BaseModel):
 # ── LeetCode ──────────────────────────────────────────────────────────────────
 
 class LeetCodeUpdate(BaseModel):
+    leetcode_url: Optional[str] = None
     leetcode_username: Optional[str] = None
     total_solved: int = 0
     easy_solved: int = 0
     medium_solved: int = 0
     hard_solved: int = 0
     acceptance_rate: float = 0
-    contest_rating: int = 0
+    contest_rating: Optional[int] = None
     global_ranking: Optional[int] = None
+    contests_attended: int = 0
+    top_percentage: Optional[float] = None
+    streak: Optional[int] = None
+    total_active_days: Optional[int] = None
+    submission_calendar: Optional[Dict] = None
+    sync_status: Optional[str] = None
+    last_sync_error: Optional[str] = None
+    last_synced_at: Optional[datetime] = None
+    delta_total: int = 0
+    delta_easy: int = 0
+    delta_medium: int = 0
+    delta_hard: int = 0
 
 class LeetCodeOut(BaseModel):
+    leetcode_url: Optional[str]
     leetcode_username: Optional[str]
     total_solved: int
     easy_solved: int
     medium_solved: int
     hard_solved: int
     acceptance_rate: float
-    contest_rating: int
+    contest_rating: Optional[int]
     global_ranking: Optional[int]
+    contests_attended: int
+    top_percentage: Optional[float]
+    streak: Optional[int]
+    total_active_days: Optional[int]
+    submission_calendar: Optional[Dict]
+    sync_status: Optional[str]
+    last_sync_error: Optional[str]
+    last_synced_at: Optional[datetime]
+    delta_total: int
+    delta_easy: int
+    delta_medium: int
+    delta_hard: int
     recent_activity: Optional[List[Dict]]
     is_demo_data: bool
-    last_synced_at: Optional[datetime]
+    note: Optional[str] = None
 
     class Config:
         from_attributes = True

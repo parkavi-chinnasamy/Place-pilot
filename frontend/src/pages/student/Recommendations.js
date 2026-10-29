@@ -65,7 +65,7 @@ export default function Recommendations() {
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:16 }}>
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', marginBottom:8, letterSpacing:'0.06em', fontWeight:700 }}>
-                  {rec.generated_by === 'gemini' ? '🤖 POWERED BY GEMINI AI' : '📊 DEMO RECOMMENDATION ENGINE'} · {rec.job_role_name}
+                  {rec.generated_by === 'gemini' ? '🤖 POWERED BY GEMINI AI' : '📊 INTELLIGENT RECOMMENDATION ENGINE'} · {rec.job_role_name}
                 </div>
                 <p style={{ fontSize:15, lineHeight:1.8, color:'rgba(255,255,255,0.85)' }}>{rec.summary}</p>
               </div>

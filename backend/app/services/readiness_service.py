@@ -14,7 +14,8 @@ from ..models import (
     Student, SkillProfile, ReadinessResult, SkillGap,
     JobRole, RoleRequirement, PerformanceHistory,
     Assessment, AssessmentType, LeetCodeProgress, ResumeAnalysis,
-    Interview, TrendDirection, EvidenceConfidence
+    Interview, TrendDirection, EvidenceConfidence,
+    CodingSubmission, SubmissionStatus
 )
 from ..ml.predictor import predict_readiness
 import uuid
@@ -52,9 +53,17 @@ def calculate_skill_profile(db: Session, student: Student) -> SkillProfile:
         Assessment.completed_at.isnot(None)
     ).all()
 
-    coding_scores = [a.score for a in assessments if a.assessment_type == AssessmentType.coding]
-    aptitude_scores = [a.score for a in assessments if a.assessment_type == AssessmentType.aptitude]
-    technical_scores = [a.score for a in assessments if a.assessment_type == AssessmentType.technical]
+    coding_scores = [float(a.score) for a in assessments if a.assessment_type == AssessmentType.coding and a.score is not None]
+    aptitude_scores = [float(a.score) for a in assessments if a.assessment_type == AssessmentType.aptitude and a.score is not None]
+    technical_scores = [float(a.score) for a in assessments if a.assessment_type == AssessmentType.technical and a.score is not None]
+
+    # Integrated Coding Practice submissions
+    coding_subs = db.query(CodingSubmission).filter(
+        CodingSubmission.student_id == student.id
+    ).all()
+    for cs in coding_subs:
+        if cs.score is not None:
+            coding_scores.append(float(cs.score))
 
     # LeetCode
     lc = db.query(LeetCodeProgress).filter(LeetCodeProgress.student_id == student.id).first()
@@ -62,30 +71,31 @@ def calculate_skill_profile(db: Session, student: Student) -> SkillProfile:
     if lc and lc.total_solved > 0:
         # Score based on solved count and difficulty mix
         raw = (lc.easy_solved * 1 + lc.medium_solved * 2 + lc.hard_solved * 3)
-        leetcode_score = min(100.0, raw * 0.15 + lc.acceptance_rate * 0.3)
+        leetcode_score = min(100.0, float(raw) * 0.15 + float(lc.acceptance_rate or 0) * 0.3)
 
     # Resume
     resumes = db.query(ResumeAnalysis).filter(
         ResumeAnalysis.student_id == student.id
     ).order_by(ResumeAnalysis.analyzed_at.desc()).all()
-    resume_score = float(resumes[0].overall_score) if resumes else 0.0
+    resume_score = float(resumes[0].overall_score) if resumes and resumes[0].overall_score is not None else 0.0
 
     # Interviews
     interviews = db.query(Interview).filter(
         Interview.student_id == student.id,
         Interview.completed_at.isnot(None)
     ).all()
-    interview_scores = [float(i.average_score) for i in interviews if i.average_score]
+    interview_scores = [float(i.average_score) for i in interviews if i.average_score is not None]
 
     # Academic → 0-100 score
     cgpa_score = float(student.cgpa) * 10 if student.cgpa else 60.0
 
     # Blend self-assessed skills with assessment data
     def blend(self_assessed: int, measured_scores: list) -> float:
+        s_val = float(self_assessed or 0)
         if not measured_scores:
-            return float(self_assessed) * 0.6 + 40.0 * 0.4  # weight self-assessment lower
-        measured_avg = sum(measured_scores) / len(measured_scores)
-        return self_assessed * 0.3 + measured_avg * 0.7
+            return s_val * 0.6 + 40.0 * 0.4  # weight self-assessment lower
+        measured_avg = float(sum(measured_scores) / len(measured_scores))
+        return s_val * 0.3 + measured_avg * 0.7
 
     sp = db.query(SkillProfile).filter(SkillProfile.student_id == student.id).first()
     if not sp:

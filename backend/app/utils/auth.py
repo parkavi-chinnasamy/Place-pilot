@@ -15,7 +15,7 @@ from ..config import get_settings
 settings = get_settings()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
 
 def hash_password(password: str) -> str:
@@ -58,6 +58,25 @@ def get_current_user(
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
     return user
+
+
+oauth2_optional_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token", auto_error=False)
+
+
+def get_optional_current_user(
+    token: Optional[str] = Depends(oauth2_optional_scheme),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        user_id: str = payload.get("sub")
+        if not user_id:
+            return None
+        return db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    except Exception:
+        return None
 
 
 def get_current_student(current_user: User = Depends(get_current_user)) -> User:

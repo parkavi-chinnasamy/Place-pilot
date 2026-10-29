@@ -27,7 +27,7 @@ const AdminStudentDetail = React.lazy(() => import('./pages/admin/AdminStudentDe
 const AdminAnalytics = React.lazy(() => import('./pages/admin/AdminAnalytics'));
 const AdminSkillGaps = React.lazy(() => import('./pages/admin/AdminSkillGaps'));
 const JobRoles      = React.lazy(() => import('./pages/admin/JobRoles'));
-const ModelEval     = React.lazy(() => import('./pages/admin/ModelEval'));
+
 const Methodology   = React.lazy(() => import('./pages/Methodology'));
 
 function ProtectedRoute({ children, adminOnly = false }) {
@@ -75,7 +75,7 @@ function AppRoutes() {
         <Route path="/admin/analytics" element={<ProtectedRoute adminOnly><AdminAnalytics /></ProtectedRoute>} />
         <Route path="/admin/skill-gaps" element={<ProtectedRoute adminOnly><AdminSkillGaps /></ProtectedRoute>} />
         <Route path="/admin/job-roles" element={<ProtectedRoute adminOnly><JobRoles /></ProtectedRoute>} />
-        <Route path="/admin/model-eval" element={<ProtectedRoute adminOnly><ModelEval /></ProtectedRoute>} />
+
 
         <Route path="*" element={<Navigate to={user ? (user.role === 'student' ? '/dashboard' : '/admin/dashboard') : '/'} replace />} />
       </Routes>

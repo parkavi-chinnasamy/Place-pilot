@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import (
     Column, String, Boolean, Integer, Numeric, Text, JSON,
-    DateTime, ForeignKey, Enum as SAEnum, JSON
+    DateTime, ForeignKey, Enum as SAEnum, desc
 )
 from sqlalchemy import JSON as JSONB
 from sqlalchemy.orm import relationship
@@ -113,6 +113,7 @@ class Student(Base):
     assessments = relationship("Assessment", back_populates="student")
     skill_profile = relationship("SkillProfile", back_populates="student", uselist=False)
     leetcode_progress = relationship("LeetCodeProgress", back_populates="student", uselist=False)
+    leetcode_snapshots = relationship("LeetCodeSnapshot", back_populates="student", cascade="all, delete-orphan", order_by=lambda: desc(LeetCodeSnapshot.captured_at))
     readiness_results = relationship("ReadinessResult", back_populates="student")
     recommendations = relationship("Recommendation", back_populates="student")
     performance_history = relationship("PerformanceHistory", back_populates="student")
@@ -187,7 +188,13 @@ class Assessment(Base):
     assessment_type = Column(SAEnum(AssessmentType), nullable=False)
     total_questions = Column(Integer, nullable=False)
     correct_answers = Column(Integer, default=0)
+    attempted_questions = Column(Integer, default=0)
+    incorrect_answers = Column(Integer, default=0)
+    unanswered_questions = Column(Integer, default=0)
     score = Column(Numeric(5, 2), default=0)
+    status = Column(String(20), default="completed")  # "not_started", "in_progress", "completed"
+    topic = Column(String(100), nullable=True)
+    difficulty = Column(String(20), nullable=True)
     time_taken_secs = Column(Integer)
     completed_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
@@ -261,21 +268,52 @@ class LeetCodeProgress(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), unique=True)
+    leetcode_url = Column(String(255), nullable=True)
+    leetcode_username = Column(String(100), nullable=True)
+    total_solved = Column(Integer, default=0)
+    easy_solved = Column(Integer, default=0)
+    medium_solved = Column(Integer, default=0)
+    hard_solved = Column(Integer, default=0)
+    acceptance_rate = Column(Numeric(5, 2), default=0)
+    contest_rating = Column(Integer, nullable=True)
+    global_ranking = Column(Integer, nullable=True)
+    contests_attended = Column(Integer, default=0)
+    top_percentage = Column(Numeric(5, 2), nullable=True)
+    streak = Column(Integer, default=0)
+    total_active_days = Column(Integer, default=0)
+    recent_activity = Column(JSONB, default=list)
+    submission_calendar = Column(JSONB, default=dict)
+    is_demo_data = Column(Boolean, default=False)
+    sync_status = Column(String(50), default="NOT_CONNECTED")  # NOT_CONNECTED, SYNCED, SYNCING, FAILED
+    last_sync_error = Column(Text, nullable=True)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    delta_total = Column(Integer, default=0)
+    delta_easy = Column(Integer, default=0)
+    delta_medium = Column(Integer, default=0)
+    delta_hard = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    student = relationship("Student", back_populates="leetcode_progress")
+
+
+class LeetCodeSnapshot(Base):
+    __tablename__ = "leetcode_snapshots"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), index=True)
     leetcode_username = Column(String(100))
     total_solved = Column(Integer, default=0)
     easy_solved = Column(Integer, default=0)
     medium_solved = Column(Integer, default=0)
     hard_solved = Column(Integer, default=0)
     acceptance_rate = Column(Numeric(5, 2), default=0)
-    contest_rating = Column(Integer, default=0)
-    global_ranking = Column(Integer)
-    recent_activity = Column(JSONB, default=list)
-    is_demo_data = Column(Boolean, default=True)
-    last_synced_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    contest_rating = Column(Integer, nullable=True)
+    global_ranking = Column(Integer, nullable=True)
+    delta_solved = Column(Integer, default=0)
+    captured_at = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
 
-    student = relationship("Student", back_populates="leetcode_progress")
+    student = relationship("Student", back_populates="leetcode_snapshots")
 
 
 class ResumeAnalysis(Base):

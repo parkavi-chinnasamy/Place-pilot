@@ -1,9 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+
+from fastapi import APIRouter, Depends, HTTPException, Form
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import User, Student, Admin, UserRole
 from ..schemas import RegisterRequest, LoginRequest, TokenResponse
-from ..utils.auth import hash_password, verify_password, create_access_token, get_current_user
+from ..utils.auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user,
+)
 import uuid
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -25,11 +31,9 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     db.flush()
 
     if role == UserRole.student:
-        student = Student(user_id=user.id)
-        db.add(student)
+        db.add(Student(user_id=user.id))
     else:
-        admin = Admin(user_id=user.id)
-        db.add(admin)
+        db.add(Admin(user_id=user.id))
 
     db.commit()
     db.refresh(user)
@@ -44,11 +48,12 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == payload.email).first()
-    if not user or not verify_password(payload.password, user.hashed_password):
+def _authenticate(email: str, password: str, db: Session):
+    user = db.query(User).filter(User.email == email).first()
+
+    if not user or not verify_password(password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account deactivated")
 
@@ -62,8 +67,27 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     )
 
 
+# Existing frontend JSON login remains compatible.
+@router.post("/login", response_model=TokenResponse, include_in_schema=True)
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    return _authenticate(payload.email, payload.password, db)
+
+
+# Swagger OAuth2 login uses form fields.
+@router.post("/token", response_model=TokenResponse, include_in_schema=True)
+def token_login(
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    return _authenticate(username, password, db)
+
+
 @router.get("/me")
-def me(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def me(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     return {
         "id": str(current_user.id),
         "email": current_user.email,

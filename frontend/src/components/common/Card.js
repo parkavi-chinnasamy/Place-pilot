@@ -10,11 +10,11 @@ export function Card({ children, className = '', style = {} }) {
 
 export function StatCard({ icon, label, value, color = '#4f46e5', sub }) {
   return (
-    <div style={{ background: 'white', borderRadius: 'var(--radius)', border: '1px solid var(--border)', padding: '20px', display: 'flex', alignItems: 'flex-start', gap: '16px', boxShadow: 'var(--shadow)' }}>
+    <div style={{ background: 'white', borderRadius: 'var(--radius)', border: '1px solid var(--border)', padding: '20px', display: 'flex', alignItems: 'flex-start', gap: '16px', boxShadow: 'var(--shadow)', minWidth: 0, overflow: 'hidden' }}>
       <div style={{ width: 48, height: 48, borderRadius: 12, background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, fontSize: 22, flexShrink: 0 }}>{icon}</div>
-      <div>
+      <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
-        <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text)' }}>{value}</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</div>
         {sub && <div style={{ fontSize: 12, color: 'var(--text-light)', marginTop: 2 }}>{sub}</div>}
       </div>
     </div>
@@ -98,10 +98,5 @@ export function Btn({ children, onClick, variant = 'primary', size = 'md', disab
 }
 
 export function DemoBanner({ message }) {
-  return (
-    <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 16px', fontSize: 12, color: '#92400e', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-      <span>⚠️</span>
-      <span>{message || 'Demo Data – This is prototype/synthetic data for demonstration purposes only.'}</span>
-    </div>
-  );
+  return null;
 }

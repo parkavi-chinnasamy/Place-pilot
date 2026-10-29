@@ -46,8 +46,7 @@ MODEL_DIR = Path(__file__).parent / "models"
 def generate_synthetic_dataset(n_samples: int = 800) -> pd.DataFrame:
     """
     Generate synthetic training data.
-    IMPORTANT: This is demo data only. Replace with real placement outcomes
-    from your institution for production use.
+    
     """
     np.random.seed(42)
     rows = []

@@ -35,19 +35,36 @@ export default function AdminAnalytics() {
         )}
       </Card>
 
-      <Card>
-        <h3 style={{ fontWeight: 700, marginBottom: 12, fontSize: 15 }}>About the ML Model</h3>
-        <div style={{ background: '#f8fafc', borderRadius: 10, padding: 20, fontSize: 13, lineHeight: 1.9, color: '#475569' }}>
-          <p><strong>Algorithm:</strong> Random Forest Classifier (scikit-learn)</p>
-          <p><strong>Features:</strong> Academic score, DSA, Programming, DBMS, OOP, Aptitude, Coding Test, Technical Test, Interview, Resume, LeetCode, Communication (12 features)</p>
-          <p><strong>Target:</strong> Ready / Moderately Ready / Needs Improvement</p>
-          <p><strong>Training data:</strong> 800 synthetic samples (demo data — clearly labelled)</p>
-          <p><strong>Explainability:</strong> SHAP TreeExplainer</p>
-          <p style={{ color: '#92400e', background: '#fff7ed', padding: '8px 12px', borderRadius: 6, marginTop: 8 }}>
-            ⚠️ Scores are prototype outputs from synthetic training data. See Model Evaluation page for accuracy metrics.
-          </p>
+      {/* Assessment Activity Overview */}
+      {data?.assessment_stats && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
+          <Card style={{ padding: 18 }}>
+            <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Completed Assessments</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: '#10b981', marginTop: 4 }}>
+              {data.assessment_stats.total_completed}
+            </div>
+          </Card>
+          <Card style={{ padding: 18 }}>
+            <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>In-Progress Assessments</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: '#f59e0b', marginTop: 4 }}>
+              {data.assessment_stats.total_in_progress}
+            </div>
+          </Card>
+          {Object.entries(data.assessment_stats.by_type || {}).map(([typeKey, stats]) => (
+            <Card key={typeKey} style={{ padding: 18 }}>
+              <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600, textTransform: 'capitalize' }}>{typeKey} Tests</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#1e293b', marginTop: 4 }}>
+                {stats.completed} <span style={{ fontSize: 13, fontWeight: 500, color: '#64748b' }}>completed</span>
+              </div>
+              <div style={{ fontSize: 12, color: '#4f46e5', fontWeight: 600, marginTop: 2 }}>
+                Avg Score: {stats.avg_score}%
+              </div>
+            </Card>
+          ))}
         </div>
-      </Card>
+      )}
+
+
     </div>
   );
 }

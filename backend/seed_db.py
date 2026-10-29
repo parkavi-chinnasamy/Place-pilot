@@ -203,8 +203,22 @@ def seed():
                 correct_option=correct, explanation=expl, difficulty=DifficultyLevel(diff)
             ))
 
+    # Also include question_bank and extra_questions
+    try:
+        from app.data.question_bank import QUESTIONS_DATA
+        from app.data.extra_questions import EXTRA_QUESTIONS
+        for q in QUESTIONS_DATA + EXTRA_QUESTIONS:
+            db.add(AssessmentQuestion(
+                assessment_type=AssessmentType(q["assessment_type"]), topic=q["topic"], question_text=q["question_text"].strip(),
+                option_a=q["option_a"], option_b=q["option_b"], option_c=q["option_c"], option_d=q["option_d"],
+                correct_option=q["correct_option"].strip().upper(), explanation=q.get("explanation", ""),
+                difficulty=DifficultyLevel(q["difficulty"])
+            ))
+    except Exception as e:
+        print("Notice: question bank addition in seed:", e)
+
     db.commit()
-    print(f"✅ Seeded: 1 admin, {len(students_data)} demo students, {len(apt_qs)+len(tech_qs)+len(coding_qs)} questions, {len(roles_data)} job roles")
+    print(f"✅ Seeded: 1 admin, {len(students_data)} students, {db.query(AssessmentQuestion).count()} questions, {len(roles_data)} job roles")
 
 if __name__ == "__main__":
     seed()

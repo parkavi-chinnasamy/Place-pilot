@@ -1,183 +1,177 @@
 import os
-import json
 import re
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from typing import Optional
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    UploadFile,
+    File,
+    Form,
+)
 from sqlalchemy.orm import Session
+
 from ..database import get_db
-from ..models import User, Student, ResumeAnalysis, JobRole, RoleRequirement
+from ..models import User, Student, ResumeAnalysis, RoleRequirement, JobRole
 from ..utils.auth import get_current_user
 from ..config import get_settings
+from ..services.resume_service import (
+    extract_resume_text,
+    parse_resume_sections,
+    extract_certifications,
+    extract_certifications_flat,
+    extract_skills_with_evidence,
+    evaluate_experience_and_profile,
+    analyze_role_skills,
+    calculate_ats_score,
+)
 
 router = APIRouter(prefix="/api/resume", tags=["Resume"])
 settings = get_settings()
 
-SKILL_KEYWORDS = {
-    "python": ["python"], "java": ["java"], "javascript": ["javascript", "js"],
-    "react": ["react", "reactjs"], "node": ["node", "nodejs", "node.js"],
-    "sql": ["sql", "mysql", "postgresql", "sqlite"], "mongodb": ["mongodb", "mongo"],
-    "docker": ["docker"], "kubernetes": ["kubernetes", "k8s"],
-    "machine learning": ["machine learning", "ml", "scikit-learn", "sklearn"],
-    "deep learning": ["deep learning", "tensorflow", "pytorch", "keras"],
-    "git": ["git", "github", "gitlab"], "rest api": ["rest", "restful", "api"],
-    "html": ["html", "html5"], "css": ["css", "sass", "scss"],
-    "c++": ["c++", "cpp"], "c": [" c ", "c language"],
-    "dsa": ["data structures", "algorithms", "dsa", "leetcode"],
-    "dbms": ["database", "dbms", "normalization", "sql"],
-    "aws": ["aws", "amazon web services", "ec2", "s3"],
-    "spring": ["spring", "spring boot"], "django": ["django", "flask"],
-}
-
 
 def _get_student(user: User, db: Session) -> Student:
-    s = db.query(Student).filter(Student.user_id == user.id).first()
-    if not s:
+    student = db.query(Student).filter(
+        Student.user_id == user.id
+    ).first()
+
+    if not student:
         raise HTTPException(404, "Student profile not found")
-    return s
 
-
-def _extract_text_from_pdf(file_content: bytes) -> str:
-    """Extract text from PDF bytes. Uses PyPDF2 if available, else demo text."""
-    try:
-        import io
-        try:
-            from pypdf import PdfReader
-        except ImportError:
-            from PyPDF2 import PdfReader
-        reader = PdfReader(io.BytesIO(file_content))
-        text = " ".join(page.extract_text() or "" for page in reader.pages)
-        return text.lower()
-    except Exception:
-        return ""
-
-
-def _analyze_resume(text: str, role_requirements: list) -> dict:
-    """Analyze resume text and compute scores."""
-    text_lower = text.lower()
-
-    # Extract skills
-    found_skills = []
-    for skill, keywords in SKILL_KEYWORDS.items():
-        if any(kw in text_lower for kw in keywords):
-            found_skills.append(skill)
-
-    # Section detection
-    has_education = any(w in text_lower for w in ["education", "degree", "university", "college", "gpa", "cgpa"])
-    has_projects = any(w in text_lower for w in ["project", "built", "developed", "implemented", "created"])
-    has_experience = any(w in text_lower for w in ["experience", "internship", "work", "company", "role", "position"])
-    has_certifications = any(w in text_lower for w in ["certif", "course", "udemy", "coursera", "award"])
-    has_contact = any(w in text_lower for w in ["email", "@", "phone", "linkedin", "github"])
-
-    # Keywords found
-    tech_keywords = [s for s in found_skills]
-
-    # Scores
-    skills_score = min(100, len(found_skills) * 8)
-    education_score = 80 if has_education else 20
-    projects_score = 75 if has_projects else 15
-    experience_score = 70 if has_experience else 30
-    completeness_score = sum([
-        20 if has_contact else 0,
-        20 if has_education else 0,
-        20 if has_projects else 0,
-        20 if has_experience else 0,
-        10 if has_certifications else 0,
-        10 if len(found_skills) > 3 else 0,
-    ])
-
-    overall = int((skills_score * 0.3 + education_score * 0.2 +
-                   projects_score * 0.25 + experience_score * 0.15 +
-                   completeness_score * 0.1))
-
-    # Missing skills for role
-    required_skills = {r["skill_name"].lower() for r in role_requirements}
-    missing = []
-    for rs in required_skills:
-        skill_present = any(rs in s.lower() or s.lower() in rs for s in found_skills)
-        if not skill_present:
-            missing.append(rs)
-
-    # Improvement suggestions
-    suggestions = []
-    if not has_projects:
-        suggestions.append({"area": "Projects", "tip": "Add 2-3 technical projects with tech stack, your role, and measurable outcomes"})
-    if not has_experience:
-        suggestions.append({"area": "Experience", "tip": "Add internship or work experience. Include company, role, and key contributions"})
-    if len(found_skills) < 5:
-        suggestions.append({"area": "Skills Section", "tip": "Add a dedicated skills section listing programming languages, frameworks, and tools"})
-    if not has_certifications:
-        suggestions.append({"area": "Certifications", "tip": "Add relevant online certifications (Coursera, Udemy, AWS, Google) to strengthen your profile"})
-    if missing:
-        suggestions.append({"area": "Role-Specific Skills", "tip": f"For your target role, add evidence of: {', '.join(missing[:4])}"})
-
-    return {
-        "extracted_skills": found_skills,
-        "keywords_found": tech_keywords,
-        "certifications": [],
-        "overall_score": overall,
-        "skills_score": skills_score,
-        "education_score": education_score,
-        "projects_score": projects_score,
-        "experience_score": experience_score,
-        "completeness_score": completeness_score,
-        "missing_skills": missing,
-        "missing_keywords": [s for s in list(required_skills - set(found_skills))[:6]],
-        "improvement_suggestions": suggestions,
-    }
+    return student
 
 
 @router.post("/analyze")
 async def analyze_resume(
     file: UploadFile = File(...),
-    job_role_id: str = Form(None),
+    job_role_id: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     student = _get_student(current_user, db)
 
-    if not file.filename.lower().endswith((".pdf", ".doc", ".docx")):
-        raise HTTPException(400, "Only PDF, DOC, DOCX files accepted")
+    filename = file.filename or ""
+    extension = os.path.splitext(filename)[1].lower()
+
+    if extension not in (".pdf", ".docx", ".doc"):
+        raise HTTPException(
+            400, "Only PDF and DOCX resumes are supported."
+        )
 
     content = await file.read()
+
+    if not content:
+        raise HTTPException(400, "The uploaded file is empty.")
+
     if len(content) > settings.max_upload_size_mb * 1024 * 1024:
-        raise HTTPException(400, f"File too large (max {settings.max_upload_size_mb}MB)")
+        raise HTTPException(
+            400,
+            f"File too large (max {settings.max_upload_size_mb}MB)",
+        )
 
-    # Save file
-    os.makedirs(settings.upload_dir, exist_ok=True)
-    fname = f"{student.id}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.filename}"
-    fpath = os.path.join(settings.upload_dir, fname)
-    with open(fpath, "wb") as f:
-        f.write(content)
+    try:
+        text, parsing_warnings, ocr_used = extract_resume_text(filename, content)
+    except ValueError as err:
+        err_msg = str(err)
+        if "Unreadable or scanned" in err_msg:
+            raise HTTPException(422, err_msg)
+        raise HTTPException(400, err_msg)
 
-    # Extract text
-    if file.filename.lower().endswith(".pdf"):
-        text = _extract_text_from_pdf(content)
-    else:
-        # For .doc/.docx, use filename as demo fallback
-        text = file.filename.lower()
+    # 1. Section Boundary Parsing
+    sections = parse_resume_sections(text)
 
-    # If extraction failed or too short, use demo text
-    if len(text) < 50:
-        text = f"python java c++ data structures algorithms sql database project experience education {current_user.full_name}"
+    # 2. Extract certifications with evidence-based confidence scoring
+    confirmed_certs, uncertain_certs, cert_warnings = extract_certifications(sections, text)
+    # Flat list of confirmed certification titles (for ATS scoring and DB storage)
+    certifications_flat = [c["title"] for c in confirmed_certs]
 
-    # Get role requirements
+    # 3. Context-aware skill extraction with category & evidence
+    skills_data = extract_skills_with_evidence(text, sections)
+    extracted_skills = skills_data["skills_list"]
+
+    # 4. Experience & Fresher Profile evaluation (fair scoring for students)
+    profile_info = evaluate_experience_and_profile(text, sections)
+
+    # 5. Role-Specific Analysis
+    role_name = None
     req_list = []
     if job_role_id:
-        reqs = db.query(RoleRequirement).filter(RoleRequirement.job_role_id == job_role_id).all()
-        req_list = [{"skill_name": r.skill_name} for r in reqs]
+        target_role = db.query(JobRole).filter(JobRole.id == job_role_id).first()
+        if target_role:
+            role_name = target_role.name
+        reqs = (
+            db.query(RoleRequirement)
+            .filter(RoleRequirement.job_role_id == job_role_id)
+            .all()
+        )
+        req_list = [{"skill_name": req.skill_name} for req in reqs]
 
-    analysis = _analyze_resume(text, req_list)
-
-    ra = ResumeAnalysis(
-        student_id=student.id,
-        job_role_id=job_role_id,
-        file_path=fpath,
-        file_name=file.filename,
-        **analysis,
+    role_analysis = analyze_role_skills(
+        detected_skills=extracted_skills,
+        role_name_or_id=role_name or job_role_id,
+        db_requirements=req_list,
     )
-    db.add(ra)
-    db.commit()
-    db.refresh(ra)
+
+    # 6. ATS Scoring Calculation
+    ats_score_data = calculate_ats_score(
+        text=text,
+        sections=sections,
+        detected_skills=extracted_skills,
+        role_analysis=role_analysis,
+        profile_info=profile_info,
+        certifications=certifications_flat,
+    )
+
+    # Merge cert_warnings into parsing_warnings
+    all_warnings = parsing_warnings + cert_warnings
+
+    # 7. Persist to storage & database
+    os.makedirs(settings.upload_dir, exist_ok=True)
+    safe_filename = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
+    fname = (
+        f"{student.id}_"
+        f"{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}_"
+        f"{safe_filename}"
+    )
+    fpath = os.path.join(settings.upload_dir, fname)
+
+    with open(fpath, "wb") as output_file:
+        output_file.write(content)
+
+    try:
+        ra = ResumeAnalysis(
+            student_id=student.id,
+            job_role_id=job_role_id if job_role_id else None,
+            file_path=fpath,
+            file_name=filename,
+            extracted_skills=extracted_skills,
+            extracted_education=[{"raw": line} for line in sections.get("education", [])],
+            extracted_projects=[{"raw": line} for line in sections.get("projects", [])],
+            extracted_experience=[{"raw": line} for line in sections.get("experience", []) + sections.get("internship", [])],
+            certifications=certifications_flat,
+            keywords_found=extracted_skills,
+            overall_score=ats_score_data["overall_score"],
+            skills_score=ats_score_data["skills_score"],
+            education_score=ats_score_data["education_score"],
+            projects_score=ats_score_data["projects_score"],
+            experience_score=ats_score_data["experience_score"],
+            completeness_score=ats_score_data["completeness_score"],
+            missing_skills=role_analysis["missing_required"],
+            missing_keywords=role_analysis["missing_preferred"],
+            improvement_suggestions=ats_score_data["improvement_suggestions"],
+        )
+
+        db.add(ra)
+        db.commit()
+        db.refresh(ra)
+
+    except Exception:
+        db.rollback()
+        if os.path.exists(fpath):
+            os.remove(fpath)
+        raise HTTPException(500, "Could not save the resume analysis.")
 
     return {
         "id": str(ra.id),
@@ -190,11 +184,39 @@ async def analyze_resume(
         "completeness_score": ra.completeness_score,
         "extracted_skills": ra.extracted_skills,
         "keywords_found": ra.keywords_found,
-        "certifications": ra.certifications,
+        # Backward-compatible flat list of confirmed cert titles
+        "certifications": certifications_flat,
+        # Structured certification data with confidence
+        "certifications_confirmed": confirmed_certs,
+        "certifications_uncertain": uncertain_certs,
+        "cert_warnings": cert_warnings,
         "missing_skills": ra.missing_skills,
         "missing_keywords": ra.missing_keywords,
         "improvement_suggestions": ra.improvement_suggestions,
+        "internship_found": profile_info["has_internship"],
+        "internship_status": (
+            "Internship verified"
+            if profile_info["has_internship"]
+            else "No internship detected"
+        ),
         "analyzed_at": ra.analyzed_at.isoformat(),
+        "score_note": ats_score_data["formula_explanation"],
+        # Enhanced fields for rich UI & transparent inspection
+        "candidate_type": profile_info["candidate_type"],
+        "is_fresher": profile_info["is_fresher"],
+        "ocr_used": ocr_used,
+        "parsing_warnings": all_warnings,
+        "skills_by_category": skills_data["skills_by_category"],
+        "skills_with_evidence": skills_data["skills_details"],
+        "role_analysis": {
+            "role_title": role_analysis["role_title"],
+            "matched_skills": role_analysis["matched_skills"],
+            "missing_required": role_analysis["missing_required"],
+            "missing_preferred": role_analysis["missing_preferred"],
+            "uncertain_skills": role_analysis["uncertain_skills"],
+            "match_ratio": role_analysis["match_ratio"],
+        },
+        "score_breakdown_details": ats_score_data["breakdown_details"],
     }
 
 
@@ -204,19 +226,76 @@ def get_history(
     db: Session = Depends(get_db),
 ):
     student = _get_student(current_user, db)
+
     analyses = (
         db.query(ResumeAnalysis)
         .filter(ResumeAnalysis.student_id == student.id)
         .order_by(ResumeAnalysis.analyzed_at.desc())
-        .limit(5)
+        .limit(10)
         .all()
     )
-    return [
-        {
-            "id": str(a.id),
-            "file_name": a.file_name,
-            "overall_score": a.overall_score,
-            "analyzed_at": a.analyzed_at.isoformat(),
-        }
-        for a in analyses
-    ]
+
+    result = []
+    for item in analyses:
+        role_name = None
+        if item.job_role_id:
+            role = db.query(JobRole).filter(JobRole.id == item.job_role_id).first()
+            if role:
+                role_name = role.name
+
+        result.append({
+            "id": str(item.id),
+            "file_name": item.file_name,
+            "overall_score": item.overall_score,
+            "skills_score": item.skills_score,
+            "education_score": item.education_score,
+            "projects_score": item.projects_score,
+            "experience_score": item.experience_score,
+            "completeness_score": item.completeness_score,
+            "job_role_name": role_name or "General Analysis",
+            "analyzed_at": item.analyzed_at.isoformat(),
+        })
+
+    return result
+
+
+@router.get("/history/{analysis_id}")
+def get_history_detail(
+    analysis_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    student = _get_student(current_user, db)
+
+    item = (
+        db.query(ResumeAnalysis)
+        .filter(ResumeAnalysis.id == analysis_id, ResumeAnalysis.student_id == student.id)
+        .first()
+    )
+    if not item:
+        raise HTTPException(404, "Analysis record not found.")
+
+    role_name = None
+    if item.job_role_id:
+        role = db.query(JobRole).filter(JobRole.id == item.job_role_id).first()
+        if role:
+            role_name = role.name
+
+    return {
+        "id": str(item.id),
+        "file_name": item.file_name,
+        "overall_score": item.overall_score,
+        "skills_score": item.skills_score,
+        "education_score": item.education_score,
+        "projects_score": item.projects_score,
+        "experience_score": item.experience_score,
+        "completeness_score": item.completeness_score,
+        "extracted_skills": item.extracted_skills or [],
+        "keywords_found": item.keywords_found or [],
+        "certifications": item.certifications or [],
+        "missing_skills": item.missing_skills or [],
+        "missing_keywords": item.missing_keywords or [],
+        "improvement_suggestions": item.improvement_suggestions or [],
+        "job_role_name": role_name or "General Analysis",
+        "analyzed_at": item.analyzed_at.isoformat(),
+    }

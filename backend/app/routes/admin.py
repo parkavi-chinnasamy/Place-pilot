@@ -47,8 +47,9 @@ def dashboard(
     gaps = db.query(SkillGap.skill_name, func.count(SkillGap.id).label("cnt")).group_by(SkillGap.skill_name).order_by(func.count(SkillGap.id).desc()).first()
     most_weak = gaps[0] if gaps else "DSA"
 
-    # Assessment count
-    assessment_count = db.query(Assessment).filter(Assessment.completed_at.isnot(None)).count()
+    # Assessment counts and completion stats
+    completed_assessments = db.query(Assessment).filter(Assessment.status == "completed").count()
+    in_progress_assessments = db.query(Assessment).filter(Assessment.status == "in_progress").count()
 
     # Department comparison
     dept_map = {}
@@ -84,11 +85,11 @@ def dashboard(
         "students_moderately_ready": mod_ready,
         "students_needs_improvement": needs,
         "most_common_weak_skill": most_weak,
-        "assessment_count": assessment_count,
+        "assessment_count": completed_assessments,
+        "in_progress_assessments": in_progress_assessments,
         "skill_averages": skill_avgs,
         "readiness_distribution": {"Ready": ready, "Moderately Ready": mod_ready, "Needs Improvement": needs},
         "department_comparison": dept_comparison,
-        "is_demo": True,
     }
 
 
@@ -275,9 +276,22 @@ def analytics(
         for d, v in sorted(trend_by_date.items()) if v
     ]
 
+    # Assessment completion metrics across students
+    total_completed = db.query(Assessment).filter(Assessment.status == "completed").count()
+    total_in_progress = db.query(Assessment).filter(Assessment.status == "in_progress").count()
+    assessments_by_type = {}
+    for at in ["aptitude", "coding", "technical"]:
+        cnt = db.query(Assessment).filter(Assessment.assessment_type == at, Assessment.status == "completed").count()
+        avg_sc = db.query(func.avg(Assessment.score)).filter(Assessment.assessment_type == at, Assessment.status == "completed").scalar()
+        assessments_by_type[at] = {"completed": cnt, "avg_score": round(float(avg_sc or 0), 1)}
+
     return {
         "readiness_trend": readiness_trend,
-        "is_demo": True,
+        "assessment_stats": {
+            "total_completed": total_completed,
+            "total_in_progress": total_in_progress,
+            "by_type": assessments_by_type,
+        }
     }
 
 

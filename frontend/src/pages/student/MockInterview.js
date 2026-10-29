@@ -16,8 +16,8 @@ const SCORE_COLOR = s =>
 
 const HR_NAMES = {
   default: { name: 'Alex Morgan', title: 'Senior HR Manager', avatar: '👩‍💼' },
-  tech:    { name: 'Priya Iyer',  title: 'Technical Recruiter', avatar: '👩‍💻' },
-  data:    { name: 'Raj Sharma',  title: 'Data Science Lead',   avatar: '👨‍🔬' },
+  tech: { name: 'Priya Iyer', title: 'Technical Recruiter', avatar: '👩‍💻' },
+  data: { name: 'Raj Sharma', title: 'Data Science Lead', avatar: '👨‍🔬' },
 };
 
 const INTRO_SCRIPT =
@@ -27,25 +27,45 @@ const INTRO_SCRIPT =
   "or type it in the box below. Take a breath, stay confident, and let's get started!";
 
 /* ── helpers ── */
-const synth = window.speechSynthesis;
+const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+
+function stopSpeaking() {
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch (_) {}
+  }
+}
 
 function speak(text, onStart, onEnd, onWord) {
   if (!synth) return;
-  synth.cancel();
+  try {
+    synth.cancel();
+  } catch (_) {}
+
   const utt = new SpeechSynthesisUtterance(text);
-  utt.rate = 0.92;
-  utt.pitch = 1.05;
+  utt.rate = 0.95;
+  utt.pitch = 1.0;
   utt.volume = 1;
-  // prefer a natural voice
-  const voices = synth.getVoices();
+
+  const voices = synth.getVoices ? synth.getVoices() : [];
   const preferred = voices.find(v =>
     v.name.includes('Google') || v.name.includes('Samantha') ||
-    v.name.includes('Karen') || v.name.includes('Natural')
+    v.name.includes('Karen') || v.name.includes('Natural') ||
+    v.lang === 'en-US'
   ) || voices[0];
   if (preferred) utt.voice = preferred;
+
   if (onStart) utt.onstart = onStart;
-  if (onEnd)   utt.onend   = onEnd;
-  if (onWord)  utt.onboundary = onWord;
+  if (onEnd) utt.onend = onEnd;
+  if (onWord) utt.onboundary = onWord;
+
+  try {
+    if (synth.paused) {
+      synth.resume();
+    }
+  } catch (_) {}
+
   synth.speak(utt);
   return utt;
 }
@@ -55,12 +75,15 @@ function speak(text, onStart, onEnd, onWord) {
 export default function MockInterview() {
   /* phase: setup | lobby | interview | result */
   const [phase, setPhase] = useState('setup');
+  // language for speech recognition
+  const [selectedLanguage, setSelectedLanguage] = useState('en-US');
   const [roles, setRoles] = useState([]);
   const [selectedRole, setSelectedRole] = useState('');
   const [session, setSession] = useState(null);
   const [qIdx, setQIdx] = useState(0);
   const [feedback, setFeedback] = useState([]);
   const [history, setHistory] = useState([]);
+  const [followUpReason, setFollowUpReason] = useState('');
 
   /* camera */
   const videoRef = useRef(null);
@@ -70,13 +93,15 @@ export default function MockInterview() {
   const [micOn, setMicOn] = useState(false);
 
   /* AI HR state */
+  const [hrCaption, setHrCaption] = useState('');
   const [hrSpeaking, setHrSpeaking] = useState(false);
-  const [hrMouth, setHrMouth] = useState(false); // mouth animation tick
-  const mouthTimer = useRef(null);
+  const [hrMouth, setHrMouth] = useState(false);
 
   /* speech recognition */
   const recognitionRef = useRef(null);
   const [listening, setListening] = useState(false);
+  // mic mute state (separate from listening)
+  const [micMuted, setMicMuted] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [answer, setAnswer] = useState('');
   const [speechSupported, setSpeechSupported] = useState(false);
@@ -88,38 +113,96 @@ export default function MockInterview() {
   /* timer */
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef(null);
+  const mouthTimer = useRef(null); // timer for AI HR mouth animation
+  const isInterviewActiveRef = useRef(false);
+  const speechTimeoutRef = useRef(null);
+  const introTimeoutRef = useRef(null);
+
+  const stopAllSpeech = useCallback(() => {
+    isInterviewActiveRef.current = false;
+    clearTimeout(speechTimeoutRef.current);
+    clearTimeout(introTimeoutRef.current);
+    stopSpeaking();
+    clearInterval(mouthTimer.current);
+    setHrMouth(false);
+    setHrSpeaking(false);
+    setHrCaption('');
+  }, []);
+
+  const stopAllListening = useCallback(() => {
+    try {
+      if (recognitionRef.current) {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+        recognitionRef.current.abort();
+      }
+    } catch (_) {}
+    setListening(false);
+    setTranscript('');
+    setMicMuted(false);
+  }, []);
 
   /* ── init ── */
   useEffect(() => {
-    jobRolesAPI.list().then(r => setRoles(r.data)).catch(() => {});
-    interviewAPI.getHistory().then(r => setHistory(r.data)).catch(() => {});
+    jobRolesAPI.list().then(r => setRoles(r.data)).catch(() => { });
+    interviewAPI.getHistory().then(r => setHistory(r.data)).catch(() => { });
     // Check speech support
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
       setSpeechSupported(true);
     }
     return () => {
-      synth?.cancel();
+      stopAllSpeech();
+      stopAllListening();
       stopCamera();
       clearInterval(timerRef.current);
       clearInterval(mouthTimer.current);
     };
-  }, []);
+  }, [stopAllSpeech, stopAllListening]);
+
+  // Immediately silence all voice audio & mic when leaving the active interview
+  useEffect(() => {
+    if (phase !== 'interview') {
+      stopAllSpeech();
+      stopAllListening();
+    }
+  }, [phase, stopAllSpeech, stopAllListening]);
+
+  // Ensure video element receives the stream whenever camOn or phase changes
+  useEffect(() => {
+    if (camOn && streamRef.current && videoRef.current) {
+      if (videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+      }
+      videoRef.current.play().catch(() => {});
+    }
+  }, [camOn, phase]);
 
   /* ── camera ── */
   const startCamera = async () => {
     try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, facingMode: 'user' },
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
         audio: true,
       });
       streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
       setCamOn(true);
       setMicOn(true);
       setCamError('');
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
+      }
     } catch (err) {
-      setCamError('Camera/mic access denied. You can still type your answers.');
+      console.error('Camera/mic access error:', err);
+      setCamError('Camera/mic access denied or unavailable. Please allow camera and microphone permissions.');
       setCamOn(false);
+      setMicOn(false);
     }
   };
 
@@ -128,6 +211,21 @@ export default function MockInterview() {
     streamRef.current = null;
     setCamOn(false);
     setMicOn(false);
+  };
+
+  const toggleCamera = async () => {
+    if (streamRef.current) {
+      const videoTracks = streamRef.current.getVideoTracks();
+      if (videoTracks.length > 0) {
+        const nextState = !camOn;
+        videoTracks.forEach(t => (t.enabled = nextState));
+        setCamOn(nextState);
+        return;
+      }
+    }
+    if (!camOn) {
+      await startCamera();
+    }
   };
 
   /* ── HR mouth animation ── */
@@ -142,27 +240,63 @@ export default function MockInterview() {
 
   /* ── HR speaks ── */
   const hrSpeak = useCallback((text, onDone) => {
+    if (!isInterviewActiveRef.current) {
+      stopSpeaking();
+      return;
+    }
     setHrSpeaking(true);
     startMouthAnim();
+    setHrCaption(text); // show caption
     speak(
       text,
       null,
-      () => { setHrSpeaking(false); stopMouthAnim(); if (onDone) onDone(); },
+      () => {
+        setHrSpeaking(false);
+        stopMouthAnim();
+        setHrCaption('');
+        if (onDone && isInterviewActiveRef.current) onDone();
+      },
       null
     );
   }, []);
+
+  // Toggle microphone audio track without stopping speech recognition
+  const toggleMic = () => {
+    if (!streamRef.current) return;
+    const audioTracks = streamRef.current.getAudioTracks();
+    if (audioTracks.length === 0) return;
+    const nextState = !micOn;
+    audioTracks.forEach(t => (t.enabled = nextState));
+    setMicOn(nextState);
+  };
+
+  // End interview early - instantly silence voice audio, mic, and camera
+  const endInterview = async () => {
+    stopAllSpeech();
+    stopAllListening();
+    stopCamera();
+    clearInterval(timerRef.current);
+
+    try {
+      if (session?.interview_id) {
+        await interviewAPI.complete(session.interview_id);
+      }
+    } catch (e) {
+      console.error('Error completing interview:', e);
+    }
+    setPhase('result');
+  };
 
   /* ── Speech recognition ── */
   const startListening = () => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
-
+    // set language based on user selection
     const rec = new SpeechRecognition();
     rec.continuous = true;
     rec.interimResults = true;
-    rec.lang = 'en-US';
-
+    rec.lang = selectedLanguage;
     rec.onresult = (e) => {
       let interim = '';
       let final = '';
@@ -174,8 +308,7 @@ export default function MockInterview() {
       if (final) setAnswer(prev => prev + ' ' + final);
     };
     rec.onerror = () => setListening(false);
-    rec.onend   = () => { setListening(false); setTranscript(''); };
-
+    rec.onend = () => { setListening(false); setTranscript(''); };
     recognitionRef.current = rec;
     rec.start();
     setListening(true);
@@ -185,6 +318,8 @@ export default function MockInterview() {
     recognitionRef.current?.stop();
     setListening(false);
     setTranscript('');
+    // also clear mic mute flag
+    setMicMuted(false);
   };
 
   /* ── Start interview ── */
@@ -192,6 +327,8 @@ export default function MockInterview() {
     if (!selectedRole) return toast.warning('Select a job role first');
     setPhase('lobby');
     await startCamera();
+    // ensure mic is unmuted for interview start
+    setMicMuted(false);
   };
 
   const beginInterview = async () => {
@@ -204,6 +341,8 @@ export default function MockInterview() {
       setAnswer('');
       setTranscript('');
       setElapsed(0);
+      stopAllSpeech();              // clear any old audio first
+      isInterviewActiveRef.current = true;  // THEN mark interview as active
       setPhase('interview');
 
       // Start elapsed timer
@@ -211,10 +350,13 @@ export default function MockInterview() {
         setElapsed(p => p + 1), 1000);
 
       // HR intro speech
-      setTimeout(() => {
+      introTimeoutRef.current = setTimeout(() => {
+        if (!isInterviewActiveRef.current) return;
         hrSpeak(INTRO_SCRIPT, () => {
+          if (!isInterviewActiveRef.current) return;
           // then ask first question
-          setTimeout(() => {
+          speechTimeoutRef.current = setTimeout(() => {
+            if (!isInterviewActiveRef.current) return;
             const q = res.data.questions[0];
             hrSpeak(`Question 1. ${q.text}`);
           }, 800);
@@ -247,18 +389,25 @@ export default function MockInterview() {
     hrSpeak(acks[qIdx % acks.length]);
 
     try {
-      const res = await interviewAPI.evaluate({
+      // Evaluate answer
+      const { data } = await interviewAPI.evaluate({
         interview_id: session.interview_id,
         question_number: q.number,
         question_text: q.text,
         student_answer: finalAnswer,
-        topic: q.topic,
+        topic: q.topic ?? '',
       });
-
+      console.log('Evaluation response:', data);
       const newFeedback = [...feedback, {
-        question: q.text, topic: q.topic, answer: finalAnswer, ...res.data
+        question: q.text,
+        topic: q.topic,
+        answer: finalAnswer,
+        ...data,
       }];
       setFeedback(newFeedback);
+      if (data.follow_up_reason) {
+        setFollowUpReason(data.follow_up_reason);
+      }
       setAnswer('');
       setTranscript('');
 
@@ -267,22 +416,35 @@ export default function MockInterview() {
       if (isLast) {
         await interviewAPI.complete(session.interview_id);
         clearInterval(timerRef.current);
-        setTimeout(() => {
+        speechTimeoutRef.current = setTimeout(() => {
+          if (!isInterviewActiveRef.current) return;
           hrSpeak(
             "That was your final question. You've completed the interview. " +
             "Please wait while I compile your results. Great effort today!",
-            () => setTimeout(() => setPhase('result'), 1500)
+            () => {
+              speechTimeoutRef.current = setTimeout(() => {
+                stopAllSpeech();
+                stopAllListening();
+                stopCamera();
+                setPhase('result');
+              }, 1500);
+            }
           );
         }, 1200);
       } else {
         const nextIdx = qIdx + 1;
         setQIdx(nextIdx);
-        setTimeout(() => {
+        speechTimeoutRef.current = setTimeout(() => {
+          if (!isInterviewActiveRef.current) return;
           const nextQ = session.questions[nextIdx];
           hrSpeak(`Next question. Question ${nextIdx + 1}. ${nextQ.text}`);
-        }, 1500);
+        }, 1200);
       }
-    } catch { toast.error('Evaluation failed'); }
+    } catch (err) {
+      console.error('Evaluation error:', err);
+      const msg = err?.response?.data?.detail || err.message || 'Evaluation failed';
+      toast.error(msg);
+    }
     finally { setEvalLoading(false); }
   };
 
@@ -296,7 +458,7 @@ export default function MockInterview() {
   const roleForHR = roles.find(r => r.id === selectedRole);
   const hrProfile = roleForHR?.name?.includes('Data') ? HR_NAMES.data
     : roleForHR?.name?.includes('Full') || roleForHR?.name?.includes('Frontend') ? HR_NAMES.tech
-    : HR_NAMES.default;
+      : HR_NAMES.default;
 
   /* ════════════════════════════════════════════════════════════════════════
      RENDER
@@ -321,9 +483,22 @@ export default function MockInterview() {
             JOB ROLE
           </label>
           <select value={selectedRole} onChange={e => setSelectedRole(e.target.value)}
-            style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 14, background: 'white', marginBottom: 24 }}>
+            style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 14, background: 'white', marginBottom: 16 }}>
             <option value="">Select a role…</option>
             {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+
+          <label style={{ fontSize: 12, fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 6 }}>
+            INTERVIEW LANGUAGE
+          </label>
+          <select value={selectedLanguage} onChange={e => setSelectedLanguage(e.target.value)}
+            style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 14, background: 'white', marginBottom: 24 }}>
+            <option value="en-US">🇺🇸 English (US)</option>
+            <option value="en-GB">🇬🇧 English (UK)</option>
+            <option value="en-IN">🇮🇳 English (India)</option>
+            <option value="hi-IN">🇮🇳 Hindi</option>
+            <option value="ta-IN">🇮🇳 Tamil</option>
+            <option value="te-IN">🇮🇳 Telugu</option>
           </select>
 
           {/* Features */}
@@ -387,8 +562,19 @@ export default function MockInterview() {
 
       <div style={{ background: '#1e1b4b', borderRadius: 20, overflow: 'hidden', marginBottom: 20, position: 'relative' }}>
         {camOn ? (
-          <video ref={videoRef} autoPlay muted playsInline
-            style={{ width: '100%', height: 360, objectFit: 'cover', display: 'block', transform: 'scaleX(-1)' }} />
+          <video
+            ref={el => {
+              videoRef.current = el;
+              if (el && streamRef.current && el.srcObject !== streamRef.current) {
+                el.srcObject = streamRef.current;
+                el.play().catch(() => {});
+              }
+            }}
+            autoPlay
+            muted
+            playsInline
+            style={{ width: '100%', height: 360, objectFit: 'cover', display: 'block', transform: 'scaleX(-1)' }}
+          />
         ) : (
           <div style={{ height: 360, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
             <div style={{ fontSize: 60, marginBottom: 16 }}>📷</div>
@@ -424,7 +610,7 @@ export default function MockInterview() {
           style={{ flex: 2, padding: 14, background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', color: 'white', border: 'none', borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: startLoading ? 'not-allowed' : 'pointer', opacity: startLoading ? 0.7 : 1 }}>
           {startLoading ? '⏳ Setting up…' : '✅ I\'m Ready — Start Interview'}
         </button>
-        <button onClick={() => { stopCamera(); setPhase('setup'); }}
+        <button onClick={() => { stopAllSpeech(); stopAllListening(); stopCamera(); setPhase('setup'); }}
           style={{ padding: '14px 20px', border: '1.5px solid #e2e8f0', borderRadius: 12, background: 'white', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
           ← Back
         </button>
@@ -445,9 +631,28 @@ export default function MockInterview() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }} />
             <span style={{ color: 'white', fontWeight: 700, fontSize: 14 }}>{session.job_role} Interview</span>
+            <span style={{ fontSize: 11, background: 'rgba(16,185,129,0.15)', color: '#34d399', padding: '2px 8px', borderRadius: 12, fontWeight: 600 }}>● LIVE VIDEO CALL</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <span style={{ color: '#a5b4fc', fontSize: 13 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              onClick={toggleCamera}
+              title={camOn ? 'Turn camera off' : 'Turn camera on'}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: camOn ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.3)', color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer', transition: 'all 0.2s' }}>
+              {camOn ? '📹 Camera ON' : '🚫 Camera OFF'}
+            </button>
+            <button
+              onClick={toggleMic}
+              title={micOn ? 'Mute microphone' : 'Unmute microphone'}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: micOn ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.3)', color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer', transition: 'all 0.2s' }}>
+              {micOn ? '🎙 Mic ON' : '🔇 Mic MUTED'}
+            </button>
+            <button
+              onClick={endInterview}
+              title="End Interview early"
+              style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: '#ef4444', color: 'white', fontWeight: 700, fontSize: 12, cursor: 'pointer', transition: 'all 0.2s' }}>
+              End Interview
+            </button>
+            <span style={{ color: '#a5b4fc', fontSize: 13, marginLeft: 6 }}>
               Q {qIdx + 1} / {session.total_questions}
             </span>
             <span style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '4px 12px', borderRadius: 20, fontSize: 13, fontWeight: 700 }}>
@@ -476,7 +681,7 @@ export default function MockInterview() {
                   {/* Animated mouth */}
                   {hrSpeaking && (
                     <div style={{ position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 3 }}>
-                      {[1,2,3,4,3,2].map((h, i) => (
+                      {[1, 2, 3, 4, 3, 2].map((h, i) => (
                         <div key={i} style={{ width: 4, background: '#a5b4fc', borderRadius: 2, height: hrMouth ? h * 4 : 2, transition: 'height 0.1s', animationDelay: `${i * 0.05}s` }} />
                       ))}
                     </div>
@@ -497,11 +702,17 @@ export default function MockInterview() {
             <div style={{ background: hrSpeaking ? 'rgba(99,102,241,0.3)' : 'rgba(255,255,255,0.05)', border: `1px solid ${hrSpeaking ? '#818cf8' : 'rgba(255,255,255,0.1)'}`, borderRadius: 20, padding: '6px 16px', fontSize: 12, color: hrSpeaking ? '#a5b4fc' : 'rgba(255,255,255,0.4)', fontWeight: 600, transition: 'all 0.3s' }}>
               {hrSpeaking ? '🔊 Speaking…' : '👂 Listening to you'}
             </div>
+            {/* AI spoken caption */}
+            {hrCaption && (
+              <div style={{ marginTop: 12, padding: '6px 12px', background: 'rgba(255,255,255,0.1)', borderRadius: 12, color: '#a5b4fc', fontSize: 13, textAlign: 'center' }}>
+                {hrCaption}
+              </div>
+            )}
 
             {/* Sound wave when speaking */}
             {hrSpeaking && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 16 }}>
-                {[3,5,8,10,7,9,6,4,8,5,3].map((h, i) => (
+                {[3, 5, 8, 10, 7, 9, 6, 4, 8, 5, 3].map((h, i) => (
                   <div key={i} style={{ width: 3, borderRadius: 2, background: '#818cf8', height: h * 3, animation: `wave-bar 0.8s ease-in-out ${i * 0.07}s infinite alternate` }} />
                 ))}
               </div>
@@ -523,12 +734,29 @@ export default function MockInterview() {
           {/* RIGHT: Student Camera */}
           <div style={{ position: 'relative', background: '#0a0820' }}>
             {camOn ? (
-              <video ref={videoRef} autoPlay muted playsInline
-                style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} />
+              <video
+                ref={el => {
+                  videoRef.current = el;
+                  if (el && streamRef.current && el.srcObject !== streamRef.current) {
+                    el.srcObject = streamRef.current;
+                    el.play().catch(() => {});
+                  }
+                }}
+                autoPlay
+                muted
+                playsInline
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transform: 'scaleX(-1)' }}
+              />
             ) : (
-              <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.3)' }}>
+              <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.4)' }}>
                 <div style={{ fontSize: 60, marginBottom: 12, opacity: 0.4 }}>👤</div>
-                <p style={{ fontSize: 14 }}>Camera not available</p>
+                <p style={{ fontSize: 14 }}>Camera is turned off</p>
+                <button
+                  onClick={toggleCamera}
+                  style={{ marginTop: 10, padding: '6px 14px', background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, cursor: 'pointer', fontSize: 12 }}
+                >
+                  Turn Camera On
+                </button>
               </div>
             )}
 
@@ -536,6 +764,13 @@ export default function MockInterview() {
             <div style={{ position: 'absolute', bottom: 16, left: 16, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', borderRadius: 8, padding: '6px 14px' }}>
               <span style={{ color: 'white', fontSize: 12, fontWeight: 700 }}>You (Candidate)</span>
             </div>
+            {/* User answer overlay */}
+            {(transcript || answer) && (
+              <div style={{ position: 'absolute', bottom: 80, left: 16, right: 16, background: 'rgba(0,0,0,0.6)', color: 'white', padding: '8px 12px', borderRadius: 8, fontSize: 14 }}>
+                {answer && <span>{answer}</span>}
+                {transcript && <span style={{ marginLeft: 8 }}>{transcript}</span>}
+              </div>
+            )}
 
             {/* Listening indicator */}
             {listening && (
@@ -621,9 +856,9 @@ export default function MockInterview() {
   /* ── RESULT ── */
   if (phase === 'result') {
     const grade = avgScore >= 8 ? { label: 'Excellent', color: '#10b981', emoji: '🏆' }
-      : avgScore >= 6 ? { label: 'Good',      color: '#06b6d4', emoji: '👍' }
-      : avgScore >= 4 ? { label: 'Average',   color: '#f59e0b', emoji: '📈' }
-      : { label: 'Needs Work', color: '#ef4444', emoji: '📚' };
+      : avgScore >= 6 ? { label: 'Good', color: '#06b6d4', emoji: '👍' }
+        : avgScore >= 4 ? { label: 'Average', color: '#f59e0b', emoji: '📈' }
+          : { label: 'Needs Work', color: '#ef4444', emoji: '📚' };
 
     return (
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
@@ -659,7 +894,7 @@ export default function MockInterview() {
           </div>
 
           <div style={{ display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap' }}>
-            <button onClick={() => { stopCamera(); setPhase('setup'); setFeedback([]); setSession(null); interviewAPI.getHistory().then(r => setHistory(r.data)).catch(() => {}); }}
+            <button onClick={() => { stopAllSpeech(); stopAllListening(); stopCamera(); setPhase('setup'); setFeedback([]); setSession(null); interviewAPI.getHistory().then(r => setHistory(r.data)).catch(() => { }); }}
               style={{ padding: '10px 24px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'white', borderRadius: 10, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
               🔄 New Interview
             </button>

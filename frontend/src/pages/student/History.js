@@ -89,19 +89,38 @@ export default function History() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: '#f8fafc' }}>
-                    <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Type</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Type & Topic</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Status</th>
                     <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Score</th>
-                    <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Result</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Breakdown</th>
                     <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Date</th>
                   </tr>
                 </thead>
                 <tbody>
                   {assessmentHistory.map((a, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '10px 12px', fontWeight: 600, textTransform: 'capitalize' }}>{a.type}</td>
-                      <td style={{ padding: '10px 12px', fontWeight: 700, color: a.score >= 70 ? '#10b981' : a.score >= 50 ? '#f59e0b' : '#ef4444' }}>{a.score?.toFixed(0)}%</td>
-                      <td style={{ padding: '10px 12px', color: '#64748b', fontSize: 12 }}>{a.correct_answers}/{a.total_questions}</td>
-                      <td style={{ padding: '10px 12px', color: '#94a3b8', fontSize: 12 }}>{new Date(a.completed_at).toLocaleDateString()}</td>
+                      <td style={{ padding: '10px 12px' }}>
+                        <div style={{ fontWeight: 600, textTransform: 'capitalize', color: '#1e293b' }}>{a.type}</div>
+                        {a.topic && <div style={{ fontSize: 11, color: '#64748b' }}>{a.topic} · {a.difficulty || 'Mixed'}</div>}
+                      </td>
+                      <td style={{ padding: '10px 12px' }}>
+                        <Badge
+                          label={a.status === 'completed' || a.status === 'Completed' ? 'Completed' : a.status || 'Completed'}
+                          type={a.status === 'completed' || a.status === 'Completed' ? 'success' : 'warning'}
+                        />
+                      </td>
+                      <td style={{ padding: '10px 12px', fontWeight: 700, color: a.score >= 70 ? '#10b981' : a.score >= 50 ? '#f59e0b' : '#ef4444' }}>
+                        {a.score?.toFixed(0)}%
+                      </td>
+                      <td style={{ padding: '10px 12px', color: '#475569', fontSize: 12 }}>
+                        <div><strong style={{ color: '#10b981' }}>{a.correct_answers}</strong>/{a.total_questions} correct</div>
+                        <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                          Att: {a.attempted_questions || a.correct_answers} · Unans: {a.unanswered_questions || 0}
+                        </div>
+                      </td>
+                      <td style={{ padding: '10px 12px', color: '#64748b', fontSize: 12 }}>
+                        {new Date(a.completed_at).toLocaleDateString()}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

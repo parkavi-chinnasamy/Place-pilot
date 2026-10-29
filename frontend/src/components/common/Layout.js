@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   FiHome, FiUser, FiCode, FiBookOpen, FiBarChart2, FiFileText,
   FiMessageSquare, FiTarget, FiTrendingUp, FiAward, FiUsers,
-  FiSettings, FiLogOut, FiMenu, FiX, FiZap, FiGrid, FiBriefcase,
+  FiLogOut, FiMenu, FiX, FiZap, FiGrid, FiBriefcase,
   FiClock, FiList
 } from 'react-icons/fi';
 import './Layout.css';
@@ -34,7 +34,7 @@ const adminNav = [
   { to: '/admin/analytics', icon: <FiBarChart2 />, label: 'Analytics' },
   { to: '/admin/skill-gaps', icon: <FiTarget />, label: 'Skill Gap Heatmap' },
   { to: '/admin/job-roles', icon: <FiBriefcase />, label: 'Job Roles' },
-  { to: '/admin/model-eval', icon: <FiSettings />, label: 'Model Evaluation' },
+
 ];
 
 export default function Layout({ children }) {

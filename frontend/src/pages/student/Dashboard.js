@@ -54,9 +54,16 @@ export default function Dashboard() {
   const strengths = sorted.slice(0, 3);
   const weaknesses = sorted.slice(-3).reverse();
 
+  const assessmentModules = [
+    { key: 'aptitude', name: 'Aptitude Test', icon: '📐', path: '/assessment/aptitude' },
+    { key: 'coding', name: 'Coding (MCQ) Test', icon: '💻', path: '/assessment/coding' },
+    { key: 'technical', name: 'Technical Test', icon: '⚙️', path: '/assessment/technical' },
+  ];
+
+  const statuses = data?.assessment_statuses || {};
+
   return (
     <div>
-      <DemoBanner message="Demo Mode – Skill scores and readiness are calculated from synthetic/demo data for prototype demonstration." />
       <PageHeader
         title={`Welcome back, ${user?.full_name?.split(' ')[0]} 👋`}
         subtitle="Here's your current placement readiness overview"
@@ -68,8 +75,76 @@ export default function Dashboard() {
         <StatCard icon={<FiTarget />} label="Readiness Score" value={data?.readiness ? `${data.readiness.score?.toFixed(0)}%` : 'N/A'} color="#4f46e5" sub={data?.readiness?.category || 'Not calculated'} />
         <StatCard icon={<FiZap />} label="Target Role" value={data?.target_role || 'Not set'} color="#06b6d4" sub="Your current target" />
         <StatCard icon={<FiAward />} label="Profile Complete" value={`${data?.profile_completeness || 0}%`} color="#10b981" sub="Fill profile for better accuracy" />
-        <StatCard icon={<FiTrendingUp />} label="Assessments" value={data?.recent_assessments?.length || 0} color="#f59e0b" sub="Recent test count" />
+        <StatCard icon={<FiTrendingUp />} label="Assessments Taken" value={data?.recent_assessments?.length || 0} color="#f59e0b" sub="Completed tests" />
       </div>
+
+      {/* Assessment Modules Section */}
+      <Card style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+          <div>
+            <h3 style={{ fontWeight: 700, fontSize: 16, margin: 0 }}>Assessment Modules & Completion Status</h3>
+            <p style={{ color: '#64748b', fontSize: 13, margin: '4px 0 0' }}>Persistent progress across aptitude, coding, and core technical skills</p>
+          </div>
+          <Link to="/history" style={{ fontSize: 13, color: '#4f46e5', fontWeight: 600 }}>View Assessment History →</Link>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+          {assessmentModules.map(mod => {
+            const stInfo = statuses[mod.key] || {};
+            const st = stInfo.status || 'Not Started';
+            const badgeType = st === 'Completed' ? 'success' : st === 'In Progress' ? 'warning' : 'default';
+
+            return (
+              <div key={mod.key} style={{ background: '#f8fafc', borderRadius: 12, padding: 18, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 24 }}>{mod.icon}</span>
+                      <span style={{ fontWeight: 700, fontSize: 15, color: '#1e293b' }}>{mod.name}</span>
+                    </div>
+                    <Badge label={st} type={badgeType} />
+                  </div>
+
+                  <div style={{ fontSize: 13, color: '#64748b', margin: '8px 0' }}>
+                    {st === 'Completed' ? (
+                      <div>
+                        Last Score: <strong style={{ color: '#4f46e5', fontSize: 16 }}>{stInfo.last_score?.toFixed(0)}%</strong>
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                          {stInfo.completed_at ? new Date(stInfo.completed_at).toLocaleDateString() : 'Completed'}
+                        </div>
+                      </div>
+                    ) : st === 'In Progress' ? (
+                      <div style={{ color: '#d97706', fontWeight: 600 }}>Test currently active / in progress</div>
+                    ) : (
+                      <div style={{ color: '#94a3b8' }}>Not yet attempted</div>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 14 }}>
+                  <Link
+                    to={mod.path}
+                    style={{
+                      display: 'block',
+                      textAlign: 'center',
+                      padding: '8px 14px',
+                      background: st === 'In Progress' ? '#f59e0b' : st === 'Completed' ? 'white' : '#4f46e5',
+                      color: st === 'Completed' ? '#4f46e5' : 'white',
+                      border: st === 'Completed' ? '1.5px solid #4f46e5' : 'none',
+                      borderRadius: 8,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      textDecoration: 'none'
+                    }}
+                  >
+                    {st === 'In Progress' ? 'Resume Test' : st === 'Completed' ? 'Retake Test' : 'Start Test'}
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
 
       {/* Readiness Banner */}
       {data?.readiness && (
@@ -83,9 +158,6 @@ export default function Dashboard() {
               <div style={{ marginTop: 8 }}>
                 <Badge label={data.readiness.category || 'Unknown'} type={READINESS_BADGE[data.readiness.category] || 'default'} />
               </div>
-              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 12 }}>
-                ⚠️ Prototype score based on synthetic training data. Not a guarantee of placement.
-              </p>
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 8 }}>Quick Actions</div>
@@ -159,7 +231,7 @@ export default function Dashboard() {
           </div>)}
         </Card>
         <Card>
-          <h3 style={{ fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, color: '#f59e0b' }}><FiBook /> Recent Tests</h3>
+          <h3 style={{ fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, color: '#f59e0b' }}><FiBook /> Recent Assessments</h3>
           {(data?.recent_assessments || []).slice(0, 4).map((a, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontSize: 13 }}>
               <span style={{ textTransform: 'capitalize' }}>{a.type}</span>

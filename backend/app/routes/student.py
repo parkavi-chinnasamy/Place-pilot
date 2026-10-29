@@ -133,10 +133,54 @@ def dashboard_summary(
         role = db.query(JobRole).filter(JobRole.id == student.target_role_id).first()
         target_role_name = role.name if role else None
 
+    # Assessment completion statuses
+    from ..models import AssessmentType
+    from datetime import datetime, timedelta
+    two_hours_ago = datetime.utcnow() - timedelta(hours=2)
+    assessment_statuses = {}
+    for atype in [AssessmentType.aptitude, AssessmentType.coding, AssessmentType.technical]:
+        active = (
+            db.query(Assessment)
+            .filter(
+                Assessment.student_id == student.id,
+                Assessment.assessment_type == atype,
+                Assessment.status == "in_progress",
+                Assessment.created_at >= two_hours_ago
+            )
+            .order_by(Assessment.created_at.desc())
+            .first()
+        )
+        completed = (
+            db.query(Assessment)
+            .filter(
+                Assessment.student_id == student.id,
+                Assessment.assessment_type == atype,
+                Assessment.status == "completed"
+            )
+            .order_by(Assessment.completed_at.desc())
+            .first()
+        )
+        if active:
+            st = "In Progress"
+        elif completed:
+            st = "Completed"
+        else:
+            st = "Not Started"
+
+        assessment_statuses[atype.value] = {
+            "type": atype.value,
+            "status": st,
+            "last_score": float(completed.score) if completed and completed.score is not None else None,
+            "completed_at": completed.completed_at.isoformat() if completed and completed.completed_at else None,
+            "total_questions": completed.total_questions if completed else (active.total_questions if active else None),
+            "correct_answers": completed.correct_answers if completed else None,
+        }
+
     return {
         "student_name": current_user.full_name,
         "profile_completeness": student.profile_completeness,
         "target_role": target_role_name,
+        "assessment_statuses": assessment_statuses,
         "readiness": {
             "category": readiness.readiness_category if readiness else None,
             "score": float(readiness.readiness_score) if readiness else None,

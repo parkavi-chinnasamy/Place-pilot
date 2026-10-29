@@ -51,8 +51,14 @@ export const jobRolesAPI = {
 
 // Assessments
 export const assessmentAPI = {
-  getQuestions: (type, count = 15) => API.get(`/api/assessments/questions/${type}?count=${count}`),
+  getMeta: (type) => API.get(`/api/assessments/meta/${type}`),
+  getQuestions: (type, params = {}) => {
+    if (typeof params === 'number') params = { count: params };
+    return API.get(`/api/assessments/questions/${type}`, { params });
+  },
+  start: (data) => API.post('/api/assessments/start', data),
   submit: (data) => API.post('/api/assessments/submit', data),
+  getStatus: () => API.get('/api/assessments/status'),
   getHistory: (type) => API.get(`/api/assessments/history${type ? `?assessment_type=${type}` : ''}`),
 };
 
@@ -78,12 +84,16 @@ export const resumeAPI = {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
   getHistory: () => API.get('/api/resume/history'),
+  getHistoryDetail: (id) => API.get(`/api/resume/history/${id}`),
 };
 
 // LeetCode
 export const leetcodeAPI = {
   getProgress: () => API.get('/api/leetcode/progress'),
+  connect: (data) => API.post('/api/leetcode/connect', data),
+  sync: () => API.post('/api/leetcode/sync'),
   update: (data) => API.post('/api/leetcode/update', data),
+  snapshots: () => API.get('/api/leetcode/snapshots'),
 };
 
 // Recommendations
@@ -99,4 +109,14 @@ export const adminAPI = {
   getSkillGaps: () => API.get('/api/admin/skill-gaps'),
   getAnalytics: () => API.get('/api/admin/analytics'),
   getModelEval: () => API.get('/api/admin/model-evaluation'),
+};
+
+// Coding Practice
+export const codingAPI = {
+  getProblems: (params = {}) => API.get('/api/coding/problems', { params }),
+  getProblem: (idOrSlug) => API.get(`/api/coding/problems/${idOrSlug}`),
+  runCode: (data) => API.post('/api/coding/run', data),
+  submitCode: (data) => API.post('/api/coding/submit', data),
+  getSubmissions: (problemId) => API.get('/api/coding/submissions', { params: { problem_id: problemId } }),
+  getStats: () => API.get('/api/coding/stats'),
 };

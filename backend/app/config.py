@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     genai_mode: str = "demo"  # "demo" or "real"
 
+    # Sandboxed Code Execution (Judge0)
+    judge0_api_url: str = "https://ce.judge0.com"
+    judge0_api_key: str = ""
+    judge0_api_host: str = "judge0-ce.p.rapidapi.com"
+
     # ML
     ml_model_path: str = "./app/ml/models/random_forest_model.pkl"
     shap_mode: str = "real"

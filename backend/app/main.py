@@ -1,28 +1,47 @@
+
 """
-PlacePilot – FastAPI Application Entry Point
+PlacePilot - FastAPI Application Entry Point
 """
+
 import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+
 from .config import get_settings
 from .database import engine, Base
-from .routes import auth, student, assessment, readiness, interview, resume, leetcode, jobroles, admin, recommendations
+from .routes import (
+    auth,
+    student,
+    assessment,
+    readiness,
+    interview,
+    resume,
+    leetcode,
+    jobroles,
+    admin,
+    recommendations,
+    skill_dictionary,
+    coding,
+)
+from .database import SessionLocal
+from .routes.coding import ensure_coding_problems_seeded
+from .services.leetcode_service import ensure_leetcode_progress_columns
 
 settings = get_settings()
 
-# Create tables (dev only – use Alembic for production)
+# Create database tables
 Base.metadata.create_all(bind=engine)
 
+# Initialize FastAPI application
 app = FastAPI(
     title="PlacePilot API",
-    description="Smart Placement Preparation Platform – Backend API",
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
 )
 
-# CORS
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
@@ -31,10 +50,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# File uploads directory
+# Create upload directory
 os.makedirs(settings.upload_dir, exist_ok=True)
 
-# Include all routers
+
+@app.on_event("startup")
+def startup_event():
+    """Initialize the LeetCode database columns and seed initial coding problems."""
+    ensure_leetcode_progress_columns()
+    try:
+        db = SessionLocal()
+        ensure_coding_problems_seeded(db)
+        db.close()
+    except Exception as e:
+        print(f"Warning: Could not seed coding problems: {e}")
+
+
+# Register API routers
 app.include_router(auth.router)
 app.include_router(student.router)
 app.include_router(assessment.router)
@@ -45,6 +77,8 @@ app.include_router(leetcode.router)
 app.include_router(jobroles.router)
 app.include_router(admin.router)
 app.include_router(recommendations.router)
+app.include_router(skill_dictionary.router)
+app.include_router(coding.router)
 
 
 @app.get("/")
@@ -59,4 +93,7 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "service": "placepilot-api",
+    }
